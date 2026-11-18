@@ -86,7 +86,7 @@ def main():
     app = QApplication(sys.argv)
 
     app.setApplicationName("MCP Guardian")
-    app.setQuitOnLastWindowClosed(True)
+    app.setQuitOnLastWindowClosed(False)
 
     bridge = ApprovalBridge()
 
