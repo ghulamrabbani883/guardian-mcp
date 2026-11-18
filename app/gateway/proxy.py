@@ -17,7 +17,6 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool
-
 from app.approval.manager import ApprovalManager
 from app.gateway.interceptor import ToolInterceptor
 
@@ -51,13 +50,15 @@ async def run_proxy(
     approval_mode: str = "manual",
     approval_timeout: float = 120.0,
     upstream_name: str = "guardian-test-server",
+    approval_manager: ApprovalManager | None = None,
 ) -> None:
     """Start the upstream server and expose the Guardian MCP gateway."""
 
-    approval_manager = ApprovalManager(
-        mode=approval_mode,
-        timeout=approval_timeout,
-    )
+    if approval_manager is None:
+        approval_manager = ApprovalManager(
+            mode=approval_mode,
+            timeout=approval_timeout,
+        )
 
     interceptor = ToolInterceptor(
         approval_manager=approval_manager,

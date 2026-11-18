@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--decision",
-        choices=["allow", "block"],
+        choices=["allow", "block", "manual"],
         required=True,
     )
 
