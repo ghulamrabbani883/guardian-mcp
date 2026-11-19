@@ -77,6 +77,21 @@ The tunnel forwards public HTTPS requests to Guardian running locally at `http:/
 
 Requests sent directly to other MCP connectors do not pass through Guardian and cannot be monitored or intercepted by it.
 
+### Code Architecture
+
+The flow diagrams above map to these implementation modules:
+
+| Module | Responsibility |
+|---|---|
+| `app/main.py` | Loads configuration and selects the local desktop or remote gateway startup path. |
+| `app/gateway/proxy.py` | Connects to the upstream MCP server over stdio, discovers tools, and exposes them to a local MCP client. |
+| `app/gateway/interceptor.py` | Requests authorization before allowing a tool call to reach the upstream server. |
+| `app/gateway/request_handler.py` | Validates tool arguments and builds the denial message for blocked calls. |
+| `app/approval/manager.py` | Tracks pending requests and unique IDs, waits for decisions, and fails closed on timeout. |
+| `app/desktop/{controller,bridge,window,notification,tray}.py` | Runs the gateway alongside Qt, connects the asyncio and Qt threads, and presents approval dialogs and desktop controls. |
+| `app/remote/{server,controller}.py` | Provides the authenticated Streamable HTTP endpoint and connects remote calls to the approval flow. |
+| `app/core/{config,logging}.py` | Loads and validates JSON settings and provides logging and argument-redaction utilities. |
+
 ## Requirements
 
 - Python 3.12 or newer.
@@ -394,17 +409,22 @@ Cloudflare Quick Tunnels are suitable for demonstrations and development, not pr
 - Approval dialogs require a human decision, which introduces latency into tool execution.
 - Cloudflare Quick Tunnels have development-oriented limitations, including a 200 concurrent-request limit and no support for Server-Sent Events (SSE). Test the actual Streamable HTTP behavior before relying on Quick Tunnels for more demanding workloads.
 
-## Demonstration
-
-Video: [ADD_DEMO_VIDEO_URL]
 
 ### Screenshots
 
-Add actual screenshots of the approval interface and request results below.
+**Claude tool request awaiting a decision**
 
-![Approval dialog](docs/screenshots/approval-window-placeholder.svg)
+![Claude tool request](docs/screenshots/firstflow.png)
 
-![Allow result](docs/screenshots/allow-result-placeholder.svg)
+**MCP Guardian approval dialog**
 
-![Block result](docs/screenshots/block-result-placeholder.svg)
+![Guardian approval dialog](docs/screenshots/secondflow.png)
+
+**Blocked request**
+
+![Blocked tool request](docs/screenshots/failedflow.png)
+
+**Approved request result**
+
+![Approved tool result](docs/screenshots/successflow.png)
 

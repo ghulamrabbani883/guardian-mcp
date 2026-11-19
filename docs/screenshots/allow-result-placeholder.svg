@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
-  <rect width="960" height="540" fill="#dcfce7"/>
-  <rect x="80" y="50" width="800" height="440" rx="18" fill="#fff" stroke="#15803d" stroke-width="4"/>
-  <text x="480" y="130" text-anchor="middle" font-family="Arial" font-size="34" fill="#166534">Allow Result</text>
-  <text x="480" y="220" text-anchor="middle" font-family="Arial" font-size="24" fill="#111827">Replace with Claude Desktop output</text>
-  <text x="480" y="275" text-anchor="middle" font-family="Arial" font-size="22" fill="#15803d">isError: false — upstream executed successfully</text>
-</svg>
