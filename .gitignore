@@ -10,6 +10,7 @@ venv/
 # Environment variables
 .env
 .env.*
+config/servers.json
 
 # IDE
 .idea/
@@ -30,3 +31,6 @@ logs/
 # Build
 build/
 dist/
+
+# Private developer guide
+DEVELOPERGUIDE.md

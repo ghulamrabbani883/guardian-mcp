@@ -1,0 +1,14 @@
+{
+  "upstream_command": "/absolute/path/to/mcp-guardian/.venv/bin/python",
+  "upstream_args": [
+    "/absolute/path/to/mcp-guardian/examples/sample_mcp_server.py"
+  ],
+  "upstream_name": "guardian-test-server",
+  "approval_timeout": 120,
+  "approval_mode": "manual",
+  "transport": "stdio",
+  "remote_host": "127.0.0.1",
+  "remote_port": 8000,
+  "remote_path": "/mcp",
+  "bearer_token": null
+}

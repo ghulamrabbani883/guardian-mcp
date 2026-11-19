@@ -152,3 +152,8 @@ class GuardianWindow(QMainWindow):
         self.error_label.setText(
             f"Gateway error: {message}"
         )
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.hide()
+        logger.info("Guardian window hidden to background")

@@ -7,10 +7,16 @@ from typing import Any
 import logging
 
 from app.approval.manager import ApprovalManager
+from app.gateway.request_handler import (
+    ToolRequestDeniedError,
+    denied_tool_message,
+    validate_tool_arguments,
+)
 logger = logging.getLogger(__name__)
 
-class ToolBlockedError(Exception):
+class ToolBlockedError(ToolRequestDeniedError):
     """Raised when a user denies an MCP tool invocation."""
+    pass
 
 
 class ToolInterceptor:
@@ -34,7 +40,7 @@ class ToolInterceptor:
         Raises ToolBlockedError when denied.
         """
 
-        safe_arguments = arguments or {}
+        safe_arguments = validate_tool_arguments(arguments)
 
         logger.info(
             f"[GUARDIAN] Intercepted tools/call: {tool_name}",
@@ -49,7 +55,7 @@ class ToolInterceptor:
 
         if not allowed:
             raise ToolBlockedError(
-                f"Guardian blocked execution of tool '{tool_name}'."
+                denied_tool_message(tool_name)
             )
 
         logger.info(

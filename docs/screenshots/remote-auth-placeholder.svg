@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" fill="#ede9fe"/>
+  <rect x="80" y="50" width="800" height="440" rx="18" fill="#fff" stroke="#6d28d9" stroke-width="4"/>
+  <text x="480" y="130" text-anchor="middle" font-family="Arial" font-size="34" fill="#4c1d95">Remote Authentication</text>
+  <text x="480" y="220" text-anchor="middle" font-family="Arial" font-size="24" fill="#111827">Replace with HTTP 401/200 output</text>
+  <text x="480" y="275" text-anchor="middle" font-family="Arial" font-size="22" fill="#475569">Do not show the bearer token</text>
+</svg>
