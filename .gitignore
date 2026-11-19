@@ -11,6 +11,7 @@ venv/
 .env
 .env.*
 config/servers.json
+config/server.json
 
 # IDE
 .idea/

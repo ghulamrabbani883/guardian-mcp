@@ -1,109 +1,141 @@
 # MCP Guardian
 
-> **Submission links**
->
-> - CV: [`https://YOUR_CV_LINK`](https://YOUR_CV_LINK)
-> - GitHub repository: [`https://github.com/YOUR_USERNAME/mcp-guardian`](https://github.com/YOUR_USERNAME/mcp-guardian)
-> - Demo video: [`https://YOUR_VIDEO_LINK`](https://YOUR_VIDEO_LINK)
-> - Live Claude Web endpoint: [`https://YOUR_PUBLIC_HOST/mcp`](https://YOUR_PUBLIC_HOST/mcp) — optional; add only while it is running and do not include any bearer token
+MCP Guardian is a Python gateway that adds a human approval step before MCP tool execution. It sits between an MCP client and an upstream MCP server, intercepts tool requests, displays them to the user, and forwards them only after approval.
 
-**Status:** Claude Desktop stdio interception is implemented and manually
-verified. The authenticated Streamable HTTP gateway is implemented and verified
-locally. A public Claude Web endpoint and its actual connector recording are
-deployment and recording steps that vary by the user's Claude account and
-hosting setup.
+## What It Does
 
-MCP Guardian is a Python security gateway that holds MCP `tools/call`
-requests until a user approves or blocks them. It supports:
+- Intercepts MCP `tools/call` requests before they reach the upstream server.
+- Displays the server, tool name, arguments, and request ID in a PySide6 approval dialog.
+- Forwards approved requests and returns an MCP error for blocked requests.
+- Handles concurrent approvals independently.
+- Fails closed when a request times out or is cancelled.
+- Supports Claude Desktop over stdio and remote MCP clients over authenticated Streamable HTTP.
+- Uses Bearer token authentication for remote connections.
 
-- Claude Desktop through MCP stdio.
-- Remote MCP clients, including Claude Web connectors, through authenticated
-  Streamable HTTP.
-- Independent concurrent approval decisions.
-- Fail-closed timeout behavior.
-- A PySide6 approval popup and macOS system-tray application.
+The sample upstream server exposes two harmless tools: `get_server_status` and `add_numbers`.
 
-Claude Web cannot be inspected by a local stdio process. MCP Guardian instead
-provides a remote Streamable HTTP gateway that Claude Web connects to. A public
-HTTPS reverse proxy or tunnel is still required for an actual Claude Web
-connector; this repository does not claim that remote requests can be observed
-when they bypass the gateway.
+## Architecture
+
+### Claude Desktop (Local stdio)
+
+```text
+Claude Desktop
+    |
+    | MCP stdio
+    v
+Guardian MCP Server
+    |
+    v
+Tool Interceptor
+    |
+    v
+Approval Manager
+    |
+    v
+PySide6 Approval Dialog
+    |
+    | Allow / Block
+    v
+Upstream MCP Server
+```
+
+Guardian starts the upstream server and discovers its available tools. When Claude calls a tool, Guardian creates a unique pending approval and waits for the user's decision.
+
+- **Allow:** The request is forwarded to the upstream MCP server and its result is returned to Claude.
+- **Block:** The request is denied without executing the upstream tool.
+
+### Remote MCP Clients (Claude Web)
+
+```text
+Claude Web
+    |
+    | HTTPS + Bearer Token
+    v
+Cloudflare Tunnel
+    |
+    | Forward to localhost:8000
+    v
+Guardian Streamable HTTP Gateway
+    |
+    v
+Tool Interceptor
+    |
+    v
+Approval Manager
+    |
+    v
+PySide6 Approval Dialog
+    |
+    | Allow / Block
+    v
+Upstream MCP Server (stdio)
+```
+
+Claude Web runs remotely and cannot directly access a local stdio gateway. Guardian provides a Streamable HTTP endpoint, which can be exposed securely using Cloudflare Tunnel.
+
+The tunnel forwards public HTTPS requests to Guardian running locally at `http://127.0.0.1:8000`.
+
+Requests sent directly to other MCP connectors do not pass through Guardian and cannot be monitored or intercepted by it.
 
 ## Requirements
 
-- macOS or another desktop OS supported by PySide6.
 - Python 3.12 or newer.
-- Claude Desktop for the local integration.
-- `pip` and a virtual environment.
+- Claude Desktop for local desktop integration.
+- A desktop environment supported by PySide6 for interactive approvals.
+- Cloudflare Tunnel (`cloudflared`) for remote Claude Web access.
+- An active internet connection for remote access.
 
-## Install
+## Installation
+
+Clone the repository and navigate to the project directory:
 
 ```bash
-cd /Users/rabbani/Desktop/Projects/mcp-guardian
+git clone https://github.com/ghulamrabbani883/guardian-mcp
+cd mcp-guardian
+```
+
+Create and activate a virtual environment:
+
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Verify the environment:
+## Run Guardian
 
-```bash
-python --version
-python -c "import mcp, PySide6; print('MCP and PySide6 ready')"
-```
-
-## Run the Sample
-
-The sample server is safe: it exposes only `get_server_status` and
-`add_numbers`.
-
-Start an allowed end-to-end stdio call:
-
-```bash
-.venv/bin/python examples/test_guardian_client.py --decision allow
-```
-
-Start a blocked end-to-end stdio call:
-
-```bash
-.venv/bin/python examples/test_guardian_client.py --decision block
-```
-
-An allowed call prints `isError: False` and executes the upstream tool. A
-blocked call prints `isError: True` and the upstream server does not execute
-the tool.
-
-Run the desktop application:
+### Start the Desktop Application
 
 ```bash
 .venv/bin/python -m app.main
 ```
 
-The application opens a status window and places itself in the system tray.
-Every pending tool call opens a top-level approval dialog.
+Guardian opens its status window and system-tray icon. Approval dialogs appear whenever the gateway receives tool calls.
 
-## Claude Desktop Configuration
+## Configure Claude Desktop
 
-Open Claude Desktop's MCP configuration file:
+Add the following entry to your Claude Desktop MCP configuration file.
+
+On macOS:
 
 ```text
 ~/Library/Application Support/Claude/claude_desktop_config.json
 ```
 
-Add or update the `mcp-guardian` entry:
+Configuration:
 
 ```json
 {
   "mcpServers": {
     "mcp-guardian": {
       "command": "/absolute/path/to/mcp-guardian/.venv/bin/python",
-      "args": [
-        "-m",
-        "app.main",
-        "--approval-mode",
-        "manual"
-      ],
+      "args": ["-m", "app.main"],
       "env": {
         "PYTHONPATH": "/absolute/path/to/mcp-guardian",
         "PYTHONUNBUFFERED": "1"
@@ -113,20 +145,52 @@ Add or update the `mcp-guardian` entry:
 }
 ```
 
-Fully quit and restart Claude Desktop. Claude will discover
-`get_server_status` and `add_numbers` through Guardian. Approving a call
-forwards it to the upstream server; blocking or timing out returns an MCP error
-and prevents upstream execution.
+Replace both paths with the absolute paths for your checkout.
 
-## JSON Configuration
+Restart Claude Desktop. It should discover the following tools through Guardian:
 
-Copy the example configuration:
+- `get_server_status`
+- `add_numbers`
+
+Call either tool to trigger the approval dialog.
+
+## Claude Web: Remote Streamable HTTP with Cloudflare Tunnel
+
+Claude Web runs remotely and cannot directly access a local stdio gateway. Guardian solves this by exposing its local Streamable HTTP endpoint through a Cloudflare Tunnel.
+
+Cloudflare Tunnel securely forwards public HTTPS requests to Guardian running locally at `http://127.0.0.1:8000`. No public IP address or direct exposure of port `8000` is required.
+
+### 1. Install Cloudflare Tunnel
+
+On macOS, install `cloudflared` using Homebrew:
+
+```bash
+brew install cloudflared
+```
+
+Verify the installation:
+
+```bash
+cloudflared --version
+```
+
+For other operating systems, follow the [official Cloudflare installation guide](https://developers.cloudflare.com/tunnel/get-started/).
+
+### 2. Configure Guardian
+
+From the project root, create the runtime configuration:
 
 ```bash
 cp config/servers.example.json config/servers.json
 ```
 
-Edit it as needed:
+Generate a private Bearer token:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Edit `config/servers.json` and configure the following values. Replace the paths with absolute paths for your checkout and paste your generated token.
 
 ```json
 {
@@ -137,290 +201,210 @@ Edit it as needed:
   "upstream_name": "guardian-test-server",
   "approval_timeout": 120,
   "approval_mode": "manual",
-  "transport": "stdio",
+  "transport": "remote",
   "remote_host": "127.0.0.1",
   "remote_port": 8000,
   "remote_path": "/mcp",
-  "bearer_token": null
+  "bearer_token": "YOUR_PRIVATE_TOKEN"
 }
 ```
 
-Run with a configuration:
+The `config/servers.json` file is ignored by Git. Never commit or share your private token.
+
+### 3. Start MCP Guardian
+
+Open a terminal in the project directory and start Guardian:
 
 ```bash
 .venv/bin/python -m app.main --config config/servers.json
 ```
 
-Command-line options override JSON values. The remote bearer token must contain
-at least 16 characters.
+Keep Guardian running.
 
-## Remote Streamable HTTP Gateway
-
-The remote gateway forwards only approved `tools/call` requests to a local
-stdio upstream MCP server and exposes a Streamable HTTP endpoint to a remote
-MCP client.
-
-Start with a deterministic test approval:
-
-```bash
-.venv/bin/python -m app.main \
-  --transport remote \
-  --approval-mode allow \
-  --host 127.0.0.1 \
-  --port 8000 \
-  --remote-path /mcp \
-  --bearer-token "replace-with-a-strong-random-token"
-```
-
-Start with manual desktop approval:
-
-```bash
-.venv/bin/python -m app.main \
-  --transport remote \
-  --host 127.0.0.1 \
-  --port 8000 \
-  --remote-path /mcp \
-  --bearer-token "replace-with-a-strong-random-token"
-```
-
-Example unauthenticated request:
-
-```bash
-curl -i http://127.0.0.1:8000/mcp
-```
-
-It should return `401 Unauthorized`. Include the bearer token as an
-`Authorization: Bearer <token>` header for an MCP client.
-
-### Claude Web Deployment
-
-For an actual Claude Web connector:
-
-1. Run MCP Guardian on a server or workstation that is reachable at deployment
-   time.
-2. Put it behind HTTPS, such as an authenticated reverse proxy or an HTTPS
-   tunnel.
-3. Keep the bearer token secret and configure the connector to use it.
-4. Add the public Streamable HTTP URL, for example
-   `https://gateway.example.com/mcp`, as a custom remote MCP connector.
-5. Use desktop mode if approval decisions must appear on the local workstation.
-
-Do not expose port `8000` directly to the public internet. Bind locally and
-terminate TLS at a trusted proxy. Use DNS names and origin controls appropriate
-for the deployment. A local stdio proxy alone cannot see or intercept arbitrary
-existing Claude Web cloud-side connectors.
-
-The supported boundary is explicit: requests must enter MCP Guardian's
-Streamable HTTP endpoint. Connector traffic that bypasses that endpoint cannot
-be observed or controlled by this project.
-
-## Architecture
+It starts the local MCP endpoint at:
 
 ```text
-Claude Desktop
-  -> stdio MCP client
-  -> Guardian low-level MCP server
-  -> ToolInterceptor
-  -> ApprovalManager
-  -> PySide6 dialog
-  -> Allow / Block
-  -> upstream MCP server
-
-Claude Web
-  -> HTTPS public endpoint
-  -> authenticated Streamable HTTP gateway
-  -> ToolInterceptor
-  -> ApprovalManager
-  -> PySide6 dialog
-  -> Allow / Block
-  -> upstream MCP server
+http://127.0.0.1:8000/mcp
 ```
 
-### Request Lifecycle
+The desktop approval interface will also open.
 
-1. Claude sends a JSON-RPC `tools/call`.
-2. Guardian verifies that the tool was discovered upstream.
-3. Guardian creates an independent request ID and pending asyncio future.
-4. The approval manager holds the future and optionally notifies the Qt UI.
-5. The UI emits Allow or Block across the Qt/asyncio thread boundary.
-6. The manager atomically resolves exactly once.
-7. Approval forwards the original arguments upstream.
-8. Block or timeout raises a protocol-level denial and prevents the upstream
-   call.
+### 4. Expose Guardian Using Cloudflare Tunnel
 
-The timeout, a UI crash, process cancellation, or transport failure is treated
-as denial rather than approval.
+Open a second terminal and run:
 
-## Demonstration
+```bash
+cloudflared tunnel --url http://127.0.0.1:8000
+```
 
-Demo video: [`https://YOUR_VIDEO_LINK`](https://YOUR_VIDEO_LINK)
+Cloudflare creates a temporary public HTTPS URL. The terminal will display something similar to:
 
-The reviewer should be able to see all of the following in the recording:
+```text
+https://random-words-here.trycloudflare.com
+```
 
-1. The MCP Guardian desktop window and system tray.
-2. Claude Desktop displaying a sample MCP tool.
-3. MCP Guardian displaying the server, tool name, request ID, and arguments.
-4. **Allow:** the upstream server executes and Claude receives the result.
-5. **Block:** Claude receives a denial and the upstream execution marker is absent.
-6. Optional: the remote endpoint rejecting a request without a bearer token.
-7. Optional: an authenticated Claude Web/Streamable HTTP request reaching the
-   approval popup and completing or blocking correctly.
+Copy the generated URL and append `/mcp`:
 
-### Screenshots
+```text
+https://random-words-here.trycloudflare.com/mcp
+```
 
-<!-- Replace each placeholder image with a real screenshot from docs/screenshots/. -->
+This is the public MCP endpoint that Claude Web will connect to.
 
-**Desktop approval window**
+Keep both Guardian and `cloudflared` running while using the connector. The Quick Tunnel URL changes when a new tunnel is started.
 
-![Desktop approval placeholder](docs/screenshots/approval-window-placeholder.svg)
+**Note:** Cloudflare Quick Tunnels are intended for development and testing. They do not require a Cloudflare account or custom domain. For a persistent hostname, configure a named Cloudflare Tunnel instead.
 
-**Allow result**
+### 5. Verify the Public Endpoint
 
-![Allow result placeholder](docs/screenshots/allow-result-placeholder.svg)
+Before connecting Claude Web, verify that the public endpoint accepts authenticated MCP initialization requests.
 
-**Block result**
+Run this from the project directory, replacing the URL with your actual Cloudflare Tunnel URL:
 
-![Block result placeholder](docs/screenshots/block-result-placeholder.svg)
+```bash
+.venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+import httpx
 
-**Claude Desktop MCP configuration**
+config = json.loads(Path("config/servers.json").read_text())
 
-![Claude Desktop configuration placeholder](docs/screenshots/claude-desktop-config-placeholder.svg)
+response = httpx.post(
+    "https://YOUR_PUBLIC_TUNNEL_HOST/mcp",
+    headers={
+        "Authorization": f"Bearer {config['bearer_token']}",
+        "Accept": "application/json, text/event-stream",
+    },
+    json={
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {
+                "name": "curl-check",
+                "version": "1.0"
+            },
+        },
+    },
+)
 
-**Remote authentication result**
+print("HTTP", response.status_code)
+print(response.text)
+PY
+```
 
-![Remote authentication placeholder](docs/screenshots/remote-auth-placeholder.svg)
+Expected response:
 
-You can either create the `docs/screenshots/` directory and replace these
-placeholders, or delete the sections that do not have an image yet. Do not
-commit screenshots containing bearer tokens or private Claude data.
+```text
+HTTP 200
+```
 
-## Security Behavior
+The response should contain `serverInfo.name` set to `mcp-guardian`.
 
-- Remote HTTP requires bearer authentication.
-- Every approval request has a unique UUID.
-- Concurrent requests have independent futures and decisions.
-- Duplicate decisions do not override the first decision.
-- Timeout defaults to 120 seconds and fails closed.
-- Closing an approval dialog is treated as Block.
-- Sensitive keys such as passwords, secrets, tokens, cookies, private keys,
-  and API keys are redacted in the shared redaction helper.
-- MCP arguments remain visible in the approval dialog because the user must be
-  able to inspect them.
-- Non-discovered upstream tools are rejected.
-- The gateway does not execute tools in deterministic allow/block test mode
-  until the approval manager authorizes the call.
+Opening the URL directly in a browser is not an equivalent test. An unauthenticated browser request should be rejected with `401 Unauthorized`.
 
-For production use, replace the bearer token with a properly deployed identity
-and authorization system, restrict network exposure, enable TLS, and add
-persistent audit logs and replay protection.
+### 6. Configure Claude Web
+
+Open Claude Web and navigate to the remote MCP connector configuration.
+
+1. Enter your Cloudflare public HTTPS URL ending in `/mcp`.
+2. Select **No sign-in** in the connector sign-in/OAuth step. Do not enter an OAuth Client ID.
+3. Select **Bearer token** as the authorization method.
+4. Enter the same private token configured in `config/servers.json`.
+5. Save and connect the MCP server.
+6. Verify that `get_server_status` and `add_numbers` are discovered.
+7. Call either tool and approve or block the request using the Guardian desktop dialog.
+
+The connector adds the Bearer authorization scheme to the supplied token.
+
+Guardian does not implement OAuth client registration. Authentication is handled through the configured Bearer token.
+
+### 7. Test the Complete Remote Flow
+
+Once Claude Web is connected:
+
+- Call `get_server_status` or `add_numbers`.
+- Guardian intercepts the incoming `tools/call` request.
+- A desktop approval dialog displays the server, tool name, arguments, and request ID.
+- Select **Allow** to forward the request to the upstream MCP server.
+- Select **Block** to deny execution and return an MCP error.
+
+The upstream tool executes only when the request is approved.
+
+## Sample Allow/Block Test
+
+The sample client runs Guardian as a subprocess with deterministic decisions:
+
+### Allow a Tool Request
+
+```bash
+.venv/bin/python examples/test_guardian_client.py --decision allow
+```
+
+The upstream sample tool executes and its result is returned.
+
+### Block a Tool Request
+
+```bash
+.venv/bin/python examples/test_guardian_client.py --decision block
+```
+
+Guardian denies the request and returns an MCP error. The upstream tool is not executed.
 
 ## Testing
 
-Run all tests:
+Run the complete test suite:
 
 ```bash
 .venv/bin/python -m pytest -q
 ```
 
-The suite covers:
+The test suite covers:
 
-- Approval, block, timeout, and cancellation.
-- Independent concurrent decisions.
-- Tool interceptor behavior.
-- Stdio proxy discovery and forwarding.
-- Blocked and unknown proxy tools.
-- JSON configuration validation.
-- Sensitive-argument redaction.
-- Remote bearer authentication.
+- Approval decisions.
+- Approval timeouts.
+- Concurrent requests.
+- Tool interception and forwarding.
+- Configuration validation.
+- Argument redaction.
+- Remote Bearer authentication.
 
-Current local test status:
+## Security Considerations
 
-```text
-19 tests passed
-```
+- Guardian fails closed when an approval times out or is cancelled.
+- Remote connections require Bearer token authentication.
+- Keep the Bearer token private and out of version control.
+- Never expose port `8000` directly to the public internet.
+- Use HTTPS through Cloudflare Tunnel.
+- Keep Guardian's approval timeout enabled.
+- Stop the Cloudflare Tunnel when it is no longer required.
+- Requests sent directly to other MCP connectors do not pass through Guardian and cannot be intercepted by it.
 
-The local test suite does not replace real Claude Desktop or real Claude Web
-verification. It verifies the approval engine and HTTP behavior deterministically.
+Cloudflare Quick Tunnels are suitable for demonstrations and development, not production deployments.
 
-### End-to-End Claude Desktop Verification Checklist
+## Known Limitations and Trade-offs
 
-- [ ] Claude Desktop starts MCP Guardian from the absolute Python path.
-- [ ] Claude discovers `get_server_status` and `add_numbers`.
-- [ ] An Allow popup forwards `add_numbers(10, 20)`.
-- [ ] The result contains `result: 30.0`.
-- [ ] The upstream execution marker is present after Allow.
-- [ ] A Block popup prevents upstream execution.
-- [ ] The upstream execution marker is absent after Block.
-- [ ] The request timeout fails closed.
-- [ ] Two simultaneous calls produce two independent request IDs.
+- Interactive approval requires a running desktop environment with PySide6.
+- Remote requests still depend on the local Guardian process and upstream MCP server being available.
+- Cloudflare Quick Tunnel URLs are temporary and change when the tunnel is restarted.
+- Guardian only intercepts requests routed through its gateway.
+- Guardian does not implement OAuth client registration.
+- Approval dialogs require a human decision, which introduces latency into tool execution.
+- Cloudflare Quick Tunnels have development-oriented limitations, including a 200 concurrent-request limit and no support for Server-Sent Events (SSE). Test the actual Streamable HTTP behavior before relying on Quick Tunnels for more demanding workloads.
 
-### Claude Web Verification Checklist
+## Demonstration
 
-- [ ] Guardian runs on `127.0.0.1:8000`.
-- [ ] HTTPS is provided through a tunnel or reverse proxy.
-- [ ] The public endpoint ends in `/mcp`.
-- [ ] Requests without a bearer token return `401`.
-- [ ] Authenticated MCP initialization succeeds.
-- [ ] `tools/list` exposes the expected sample tools.
-- [ ] Claude Web is configured to use Guardian rather than bypassing it.
-- [ ] A remote Allow call executes upstream.
-- [ ] A remote Block call is denied and does not execute upstream.
+Video: [ADD_DEMO_VIDEO_URL]
 
-## Project Layout
+### Screenshots
 
-```text
-app/
-  approval/       independent approval futures and decisions
-  core/           configuration and logging/redaction
-  desktop/        PySide6 window, dialog, tray, and Qt bridge
-  gateway/        stdio proxy and tool interception
-  remote/         authenticated Streamable HTTP gateway
-examples/         harmless upstream server and integration client
-config/           JSON configuration example
-tests/            pytest and pytest-asyncio coverage
-```
+Add actual screenshots of the approval interface and request results below.
 
-## Claude Desktop Troubleshooting
+![Approval dialog](docs/screenshots/approval-window-placeholder.svg)
 
-### Claude cannot find the server
+![Allow result](docs/screenshots/allow-result-placeholder.svg)
 
-- Verify the absolute Python and project paths.
-- Restart Claude Desktop completely.
-- Confirm `.venv/bin/python -m app.main --approval-mode block` starts.
-- Check logs in Claude Desktop and stderr output.
+![Block result](docs/screenshots/block-result-placeholder.svg)
 
-### No approval popup appears
-
-- Re-enable the app in macOS and ensure PySide6 can open windows.
-- Use the system tray menu to show the Guardian window.
-- Check that `--approval-mode manual` is active.
-
-### The upstream tool is not executed
-
-- Block mode, timeout, cancellation, UI failure, and denial all prevent
-  execution.
-- Check the upstream server and application logs.
-- Verify the tool name exists in `list_tools`.
-
-## Clean Repository
-
-Runtime artifacts are excluded by `.gitignore`, including virtual environments,
-pytest caches, logs, build directories, and environment files.
-
-## Submission Checklist
-
-- [ ] Replace the CV, GitHub, demo video, and optional public endpoint placeholders.
-- [ ] Record the Allow and Block demonstration.
-- [ ] Add unredacted-free screenshots to `docs/screenshots/`.
-- [ ] Remove placeholder text from the live links.
-- [ ] Add a license if the repository is intended for public use.
-- [ ] Add a real public GitHub remote and push the repository.
-- [ ] Verify that `.venv/`, bearer tokens, private configuration, and Claude
-      Desktop account data are not committed.
-- [ ] Run `.venv/bin/python -m pytest -q` immediately before submission.
-- [ ] Submit the CV, GitHub repository link, and demo video link using the
-      assignment form.
-
-## License
-
-License: **PLACEHOLDER — choose an appropriate license before public release.**
